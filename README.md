@@ -402,7 +402,7 @@ Lambda Layer에 등록 할 수 있도록 octember-resources라는 이름의 s3 b
 설정 한 후, `cdk deploy` 명령어를 이용해서 배포함
 
     ```shell script
-    $ git clone https://github.com/ksmin23/octember-bizcard.git
+    $ git clone git@github.com:aws-samples/social-graph-based-people-recommender-using-amazon-neptune-and-textract.git
     $ cd octember-bizcard
     $ cat <<EOF > cdk.context.json
     > {
