@@ -15,7 +15,7 @@ aws-cdk.aws-neptune==1.95.1
 aws-cdk.aws-sagemaker==1.95.1
 
 # pip install elasticsearch
-elasticsearch>=7.0.0,<7.14
+elasticsearch>=7.0.0,<7.11
 requests-aws4auth==0.9
 
 # pip install gremlinpython
