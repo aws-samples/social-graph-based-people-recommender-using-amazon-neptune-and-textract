@@ -413,7 +413,7 @@ Lambda Layer에 등록 할 수 있도록 octember-resources라는 이름의 s3 b
     $ source .env/bin/activate
     (.env) $ pip install -r requirements.txt
     (.env) $ cdk --version
-    1.85.0 (build 5f44668)
+    2.10.0 (build e5b301f)
     (.env) $ cdk context -j
     {
       "lib_bucket_name": "octember-resources"

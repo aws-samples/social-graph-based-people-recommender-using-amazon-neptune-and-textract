@@ -3,8 +3,10 @@
 
 import pretty_errors
 
+import aws_cdk as cdk
+
 from aws_cdk import (
-  core,
+  Stack,
   aws_ec2,
   aws_apigateway as apigw,
   aws_iam,
@@ -19,16 +21,17 @@ from aws_cdk import (
   aws_neptune,
   aws_sagemaker
 )
+from constructs import Construct
 
 from aws_cdk.aws_lambda_event_sources import (
   S3EventSource,
   KinesisEventSource
 )
 
-class OctemberBizcardStack(core.Stack):
+class OctemberBizcardStack(Stack):
 
-  def __init__(self, scope: core.Construct, id: str, **kwargs) -> None:
-    super().__init__(scope, id, **kwargs)
+  def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    super().__init__(scope, construct_id, **kwargs)
 
     vpc = aws_ec2.Vpc(self, "OctemberVPC",
       max_azs=2,
@@ -40,12 +43,12 @@ class OctemberBizcardStack(core.Stack):
 #        {
 #          "cidrMask": 24,
 #          "name": "Private",
-#          "subnetType": aws_ec2.SubnetType.PRIVATE
+#          "subnetType": aws_ec2.SubnetType.PRIVATE_WITH_NAT
 #        },
 #        {
 #          "cidrMask": 28,
 #          "name": "Isolated",
-#          "subnetType": aws_ec2.SubnetType.ISOLATED,
+#          "subnetType": aws_ec2.SubnetType.PRIVATE_ISOLATED,
 #          "reserved": True
 #        }
 #      ],
@@ -61,7 +64,8 @@ class OctemberBizcardStack(core.Stack):
     )
 
     s3_bucket = s3.Bucket(self, "s3bucket",
-      bucket_name="octember-bizcard-{region}-{account}".format(region=core.Aws.REGION, account=core.Aws.ACCOUNT_ID))
+      # removal_policy=cdk.RemovalPolicy.DESTROY,
+      bucket_name="octember-bizcard-{region}-{account}".format(region=cdk.Aws.REGION, account=cdk.Aws.ACCOUNT_ID))
 
     api = apigw.RestApi(self, "BizcardImageUploader",
       rest_api_name="BizcardImageUploader",
@@ -115,7 +119,7 @@ class OctemberBizcardStack(core.Stack):
             'method.response.header.Content-Type': False
           },
           response_models={
-            'application/json': apigw.EmptyModel()
+            'application/json': apigw.Model.EMPTY_MODEL
           }
         ),
         apigw.MethodResponse(status_code="400"),
@@ -152,7 +156,7 @@ class OctemberBizcardStack(core.Stack):
             'method.response.header.Content-Type': False
           },
           response_models={
-            'application/json': apigw.EmptyModel()
+            'application/json': apigw.Model.EMPTY_MODEL
           }
         ),
         apigw.MethodResponse(status_code="400"),
@@ -190,7 +194,7 @@ class OctemberBizcardStack(core.Stack):
             'method.response.header.Content-Type': False
           },
           response_models={
-            'application/json': apigw.EmptyModel()
+            'application/json': apigw.Model.EMPTY_MODEL
           }
         ),
         apigw.MethodResponse(status_code="400"),
@@ -230,7 +234,7 @@ class OctemberBizcardStack(core.Stack):
             'method.response.header.Content-Type': False
           },
           response_models={
-            'application/json': apigw.EmptyModel()
+            'application/json': apigw.Model.EMPTY_MODEL
           }
         ),
         apigw.MethodResponse(status_code="400"),
@@ -244,6 +248,7 @@ class OctemberBizcardStack(core.Stack):
     )
 
     ddb_table = dynamodb.Table(self, "BizcardImageMetaInfoDdbTable",
+      # removal_policy=cdk.RemovalPolicy.DESTROY,
       table_name="OctemberBizcardImgMeta",
       partition_key=dynamodb.Attribute(name="image_id", type=dynamodb.AttributeType.STRING),
       billing_mode=dynamodb.BillingMode.PROVISIONED,
@@ -259,13 +264,13 @@ class OctemberBizcardStack(core.Stack):
       function_name="TriggerTextExtractorFromImage",
       handler="trigger_text_extract_from_s3_image.lambda_handler",
       description="Trigger to extract text from an image in S3",
-      code=_lambda.Code.asset("./src/main/python/TriggerTextExtractFromS3Image"),
+      code=_lambda.Code.from_asset("./src/main/python/TriggerTextExtractFromS3Image"),
       environment={
-        'REGION_NAME': core.Aws.REGION,
+        'REGION_NAME': cdk.Aws.REGION,
         'DDB_TABLE_NAME': ddb_table.table_name,
         'KINESIS_STREAM_NAME': img_kinesis_stream.stream_name
       },
-      timeout=core.Duration.minutes(5)
+      timeout=cdk.Duration.minutes(5)
     )
 
     ddb_table_rw_policy_statement = aws_iam.PolicyStatement(
@@ -317,7 +322,8 @@ class OctemberBizcardStack(core.Stack):
     # if log_retention=aws_logs.RetentionDays.THREE_DAYS is added to the constructor props
     log_group = aws_logs.LogGroup(self, "TriggerTextractLogGroup",
       log_group_name="/aws/lambda/TriggerTextExtractorFromImage",
-      retention=aws_logs.RetentionDays.THREE_DAYS)
+      retention=aws_logs.RetentionDays.THREE_DAYS,
+      removal_policy=cdk.RemovalPolicy.DESTROY)
     log_group.grant_write(trigger_textract_lambda_fn)
 
     text_kinesis_stream = kinesis.Stream(self, "BizcardTextData", stream_name="octember-bizcard-txt")
@@ -327,13 +333,13 @@ class OctemberBizcardStack(core.Stack):
       function_name="GetTextFromImage",
       handler="get_text_from_s3_image.lambda_handler",
       description="extract text from an image in S3",
-      code=_lambda.Code.asset("./src/main/python/GetTextFromS3Image"),
+      code=_lambda.Code.from_asset("./src/main/python/GetTextFromS3Image"),
       environment={
-        'REGION_NAME': core.Aws.REGION,
+        'REGION_NAME': cdk.Aws.REGION,
         'DDB_TABLE_NAME': ddb_table.table_name,
         'KINESIS_STREAM_NAME': text_kinesis_stream.stream_name
       },
-      timeout=core.Duration.minutes(5)
+      timeout=cdk.Duration.minutes(5)
     )
 
     textract_lambda_fn.add_to_role_policy(ddb_table_rw_policy_statement)
@@ -369,7 +375,8 @@ class OctemberBizcardStack(core.Stack):
 
     log_group = aws_logs.LogGroup(self, "GetTextFromImageLogGroup",
       log_group_name="/aws/lambda/GetTextFromImage",
-      retention=aws_logs.RetentionDays.THREE_DAYS)
+      retention=aws_logs.RetentionDays.THREE_DAYS,
+      removal_policy=cdk.RemovalPolicy.DESTROY)
     log_group.grant_write(textract_lambda_fn)
 
     sg_use_bizcard_es = aws_ec2.SecurityGroup(self, "BizcardSearchClientSG",
@@ -378,7 +385,7 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard elasticsearch client',
       security_group_name='use-octember-bizcard-es'
     )
-    core.Tags.of(sg_use_bizcard_es).add('Name', 'use-octember-bizcard-es')
+    cdk.Tags.of(sg_use_bizcard_es).add('Name', 'use-octember-bizcard-es')
 
     sg_bizcard_es = aws_ec2.SecurityGroup(self, "BizcardSearchSG",
       vpc=vpc,
@@ -386,7 +393,7 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard elasticsearch',
       security_group_name='octember-bizcard-es'
     )
-    core.Tags.of(sg_bizcard_es).add('Name', 'octember-bizcard-es')
+    cdk.Tags.of(sg_bizcard_es).add('Name', 'octember-bizcard-es')
 
     sg_bizcard_es.add_ingress_rule(peer=sg_bizcard_es, connection=aws_ec2.Port.all_tcp(), description='octember-bizcard-es')
     sg_bizcard_es.add_ingress_rule(peer=sg_use_bizcard_es, connection=aws_ec2.Port.all_tcp(), description='use-octember-bizcard-es')
@@ -397,7 +404,7 @@ class OctemberBizcardStack(core.Stack):
       description='security group for bastion host',
       security_group_name='octember-bastion-host-sg'
     )
-    core.Tags.of(sg_ssh_access).add('Name', 'octember-bastion-host')
+    cdk.Tags.of(sg_ssh_access).add('Name', 'octember-bastion-host')
     sg_ssh_access.add_ingress_rule(peer=aws_ec2.Peer.any_ipv4(), connection=aws_ec2.Port.tcp(22), description='ssh access')
 
     bastion_host = aws_ec2.BastionHostLinux(self, "BastionHost",
@@ -450,15 +457,15 @@ class OctemberBizcardStack(core.Stack):
       },
       vpc_options={
         "securityGroupIds": [sg_bizcard_es.security_group_id],
-        "subnetIds": vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE).subnet_ids
+        "subnetIds": vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids
       }
     )
-    core.Tags.of(es_cfn_domain).add('Name', 'octember-bizcard-es')
+    cdk.Tags.of(es_cfn_domain).add('Name', 'octember-bizcard-es')
 
     s3_lib_bucket_name = self.node.try_get_context("lib_bucket_name")
 
     #XXX: https://github.com/aws/aws-cdk/issues/1342
-    s3_lib_bucket = s3.Bucket.from_bucket_name(self, id, s3_lib_bucket_name)
+    s3_lib_bucket = s3.Bucket.from_bucket_name(self, construct_id, s3_lib_bucket_name)
     es_lib_layer = _lambda.LayerVersion(self, "ESLib",
       layer_version_name="es-lib",
       compatible_runtimes=[_lambda.Runtime.PYTHON_3_7],
@@ -477,13 +484,13 @@ class OctemberBizcardStack(core.Stack):
       function_name="UpsertBizcardToElasticSearch",
       handler="upsert_bizcard_to_es.lambda_handler",
       description="Upsert bizcard text into elasticsearch",
-      code=_lambda.Code.asset("./src/main/python/UpsertBizcardToES"),
+      code=_lambda.Code.from_asset("./src/main/python/UpsertBizcardToES"),
       environment={
         'ES_HOST': es_cfn_domain.attr_domain_endpoint,
         'ES_INDEX': 'octember_bizcard',
         'ES_TYPE': 'bizcard'
       },
-      timeout=core.Duration.minutes(5),
+      timeout=cdk.Duration.minutes(5),
       layers=[es_lib_layer],
       security_groups=[sg_use_bizcard_es],
       vpc=vpc
@@ -494,7 +501,8 @@ class OctemberBizcardStack(core.Stack):
 
     log_group = aws_logs.LogGroup(self, "UpsertBizcardToESLogGroup",
       log_group_name="/aws/lambda/UpsertBizcardToElasticSearch",
-      retention=aws_logs.RetentionDays.THREE_DAYS)
+      retention=aws_logs.RetentionDays.THREE_DAYS,
+      removal_policy=cdk.RemovalPolicy.DESTROY)
     log_group.grant_write(upsert_to_es_lambda_fn)
 
     firehose_role_policy_doc = aws_iam.PolicyDocument()
@@ -531,7 +539,8 @@ class OctemberBizcardStack(core.Stack):
       #XXX: The ARN will be formatted as follows:
       # arn:{partition}:{service}:{region}:{account}:{resource}{sep}}{resource-name}
       resources=[self.format_arn(service="logs", resource="log-group",
-        resource_name="{}:log-stream:*".format(firehose_log_group_name), sep=":")],
+        resource_name="{}:log-stream:*".format(firehose_log_group_name),
+        arn_format=cdk.ArnFormat.COLON_RESOURCE_NAME)],
       actions=["logs:PutLogEvents"]
     ))
 
@@ -574,7 +583,7 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard search query cache client',
       security_group_name='use-octember-bizcard-es-cache'
     )
-    core.Tags.of(sg_use_bizcard_es_cache).add('Name', 'use-octember-bizcard-es-cache')
+    cdk.Tags.of(sg_use_bizcard_es_cache).add('Name', 'use-octember-bizcard-es-cache')
 
     sg_bizcard_es_cache = aws_ec2.SecurityGroup(self, "BizcardSearchCacheSG",
       vpc=vpc,
@@ -582,13 +591,13 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard search query cache',
       security_group_name='octember-bizcard-es-cache'
     )
-    core.Tags.of(sg_bizcard_es_cache).add('Name', 'octember-bizcard-es-cache')
+    cdk.Tags.of(sg_bizcard_es_cache).add('Name', 'octember-bizcard-es-cache')
 
     sg_bizcard_es_cache.add_ingress_rule(peer=sg_use_bizcard_es_cache, connection=aws_ec2.Port.tcp(6379), description='use-octember-bizcard-es-cache')
 
     es_query_cache_subnet_group = aws_elasticache.CfnSubnetGroup(self, "QueryCacheSubnetGroup",
       description="subnet group for octember-bizcard-es-cache",
-      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE).subnet_ids,
+      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids,
       cache_subnet_group_name='octember-bizcard-es-cache'
     )
 
@@ -621,14 +630,14 @@ class OctemberBizcardStack(core.Stack):
       function_name="BizcardSearchProxy",
       handler="es_search_bizcard.lambda_handler",
       description="Proxy server to search bizcard text",
-      code=_lambda.Code.asset("./src/main/python/SearchBizcard"),
+      code=_lambda.Code.from_asset("./src/main/python/SearchBizcard"),
       environment={
         'ES_HOST': es_cfn_domain.attr_domain_endpoint,
         'ES_INDEX': 'octember_bizcard',
         'ES_TYPE': 'bizcard',
         'ELASTICACHE_HOST': es_query_cache.attr_redis_endpoint_address
       },
-      timeout=core.Duration.minutes(1),
+      timeout=cdk.Duration.minutes(1),
       layers=[es_lib_layer, redis_lib_layer],
       security_groups=[sg_use_bizcard_es, sg_use_bizcard_es_cache],
       vpc=vpc
@@ -649,7 +658,7 @@ class OctemberBizcardStack(core.Stack):
     bizcard_search.add_method("GET",
       method_responses=[apigw.MethodResponse(status_code="200",
           response_models={
-            'application/json': apigw.EmptyModel()
+            'application/json': apigw.Model.EMPTY_MODEL
           }
         ),
         apigw.MethodResponse(status_code="400"),
@@ -663,7 +672,7 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard graph db client',
       security_group_name='use-octember-bizcard-neptune'
     )
-    core.Tags.of(sg_use_bizcard_graph_db).add('Name', 'use-octember-bizcard-neptune')
+    cdk.Tags.of(sg_use_bizcard_graph_db).add('Name', 'use-octember-bizcard-neptune')
 
     sg_bizcard_graph_db = aws_ec2.SecurityGroup(self, "BizcardGraphDbSG",
       vpc=vpc,
@@ -671,14 +680,14 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard graph db',
       security_group_name='octember-bizcard-neptune'
     )
-    core.Tags.of(sg_bizcard_graph_db).add('Name', 'octember-bizcard-neptune')
+    cdk.Tags.of(sg_bizcard_graph_db).add('Name', 'octember-bizcard-neptune')
 
     sg_bizcard_graph_db.add_ingress_rule(peer=sg_bizcard_graph_db, connection=aws_ec2.Port.tcp(8182), description='octember-bizcard-neptune')
     sg_bizcard_graph_db.add_ingress_rule(peer=sg_use_bizcard_graph_db, connection=aws_ec2.Port.tcp(8182), description='use-octember-bizcard-neptune')
 
     bizcard_graph_db_subnet_group = aws_neptune.CfnDBSubnetGroup(self, "NeptuneSubnetGroup",
       db_subnet_group_description="subnet group for octember-bizcard-neptune",
-      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE).subnet_ids,
+      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids,
       db_subnet_group_name='octember-bizcard-neptune'
     )
 
@@ -728,13 +737,13 @@ class OctemberBizcardStack(core.Stack):
       function_name="UpsertBizcardToNeptune",
       handler="upsert_bizcard_to_graph_db.lambda_handler",
       description="Upsert bizcard into neptune",
-      code=_lambda.Code.asset("./src/main/python/UpsertBizcardToGraphDB"),
+      code=_lambda.Code.from_asset("./src/main/python/UpsertBizcardToGraphDB"),
       environment={
-        'REGION_NAME': core.Aws.REGION,
+        'REGION_NAME': cdk.Aws.REGION,
         'NEPTUNE_ENDPOINT': bizcard_graph_db.attr_endpoint,
         'NEPTUNE_PORT': bizcard_graph_db.attr_port
       },
-      timeout=core.Duration.minutes(5),
+      timeout=cdk.Duration.minutes(5),
       layers=[gremlinpython_lib_layer],
       security_groups=[sg_use_bizcard_graph_db],
       vpc=vpc
@@ -744,7 +753,8 @@ class OctemberBizcardStack(core.Stack):
 
     log_group = aws_logs.LogGroup(self, "UpsertBizcardToGraphDBLogGroup",
       log_group_name="/aws/lambda/UpsertBizcardToNeptune",
-      retention=aws_logs.RetentionDays.THREE_DAYS)
+      retention=aws_logs.RetentionDays.THREE_DAYS,
+      removal_policy=cdk.RemovalPolicy.DESTROY)
     log_group.grant_write(upsert_to_neptune_lambda_fn)
 
     sg_use_bizcard_neptune_cache = aws_ec2.SecurityGroup(self, "BizcardNeptuneCacheClientSG",
@@ -753,7 +763,7 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard recommendation query cache client',
       security_group_name='use-octember-bizcard-neptune-cache'
     )
-    core.Tags.of(sg_use_bizcard_neptune_cache).add('Name', 'use-octember-bizcard-es-cache')
+    cdk.Tags.of(sg_use_bizcard_neptune_cache).add('Name', 'use-octember-bizcard-es-cache')
 
     sg_bizcard_neptune_cache = aws_ec2.SecurityGroup(self, "BizcardNeptuneCacheSG",
       vpc=vpc,
@@ -761,13 +771,13 @@ class OctemberBizcardStack(core.Stack):
       description='security group for octember bizcard recommendation query cache',
       security_group_name='octember-bizcard-neptune-cache'
     )
-    core.Tags.of(sg_bizcard_neptune_cache).add('Name', 'octember-bizcard-neptune-cache')
+    cdk.Tags.of(sg_bizcard_neptune_cache).add('Name', 'octember-bizcard-neptune-cache')
 
     sg_bizcard_neptune_cache.add_ingress_rule(peer=sg_use_bizcard_neptune_cache, connection=aws_ec2.Port.tcp(6379), description='use-octember-bizcard-neptune-cache')
 
     recomm_query_cache_subnet_group = aws_elasticache.CfnSubnetGroup(self, "RecommQueryCacheSubnetGroup",
       description="subnet group for octember-bizcard-neptune-cache",
-      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE).subnet_ids,
+      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids,
       cache_subnet_group_name='octember-bizcard-neptune-cache'
     )
 
@@ -794,14 +804,14 @@ class OctemberBizcardStack(core.Stack):
       function_name="BizcardRecommender",
       handler="neptune_recommend_bizcard.lambda_handler",
       description="This service serves PYMK(People You May Know).",
-      code=_lambda.Code.asset("./src/main/python/RecommendBizcard"),
+      code=_lambda.Code.from_asset("./src/main/python/RecommendBizcard"),
       environment={
-        'REGION_NAME': core.Aws.REGION,
+        'REGION_NAME': cdk.Aws.REGION,
         'NEPTUNE_ENDPOINT': bizcard_graph_db.attr_read_endpoint,
         'NEPTUNE_PORT': bizcard_graph_db.attr_port,
         'ELASTICACHE_HOST': recomm_query_cache.attr_redis_endpoint_address
       },
-      timeout=core.Duration.minutes(1),
+      timeout=cdk.Duration.minutes(1),
       layers=[gremlinpython_lib_layer, redis_lib_layer],
       security_groups=[sg_use_bizcard_graph_db, sg_use_bizcard_neptune_cache],
       vpc=vpc
@@ -822,7 +832,7 @@ class OctemberBizcardStack(core.Stack):
     bizcard_recomm.add_method("GET",
       method_responses=[apigw.MethodResponse(status_code="200",
           response_models={
-            'application/json': apigw.EmptyModel()
+            'application/json': apigw.Model.EMPTY_MODEL
           }
         ),
         apigw.MethodResponse(status_code="400"),
@@ -842,7 +852,7 @@ class OctemberBizcardStack(core.Stack):
     sagemaker_notebook_role_policy_doc.add_statements(aws_iam.PolicyStatement(**{
       "effect": aws_iam.Effect.ALLOW,
       "resources": ["arn:aws:neptune-db:{region}:{account}:{cluster_id}/*".format(
-        region=core.Aws.REGION, account=core.Aws.ACCOUNT_ID, cluster_id=bizcard_graph_db.attr_cluster_resource_id)],
+        region=cdk.Aws.REGION, account=cdk.Aws.ACCOUNT_ID, cluster_id=bizcard_graph_db.attr_cluster_resource_id)],
       "actions": ["neptune-db:connect"]
     }))
 
@@ -869,10 +879,10 @@ tar -zxvf /tmp/graph_notebook.tar.gz -C /tmp
 EOF
 '''.format(NeptuneClusterEndpoint=bizcard_graph_db.attr_endpoint,
     NeptuneClusterPort=bizcard_graph_db.attr_port,
-    AWS_Region=core.Aws.REGION)
+    AWS_Region=cdk.Aws.REGION)
 
     neptune_wb_lifecycle_config_prop = aws_sagemaker.CfnNotebookInstanceLifecycleConfig.NotebookInstanceLifecycleHookProperty(
-      content=core.Fn.base64(neptune_wb_lifecycle_content)
+      content=cdk.Fn.base64(neptune_wb_lifecycle_content)
     )
 
     neptune_wb_lifecycle_config = aws_sagemaker.CfnNotebookInstanceLifecycleConfig(self, 'NpetuneWorkbenchLifeCycleConfig',
@@ -886,6 +896,13 @@ EOF
       lifecycle_config_name=neptune_wb_lifecycle_config.notebook_instance_lifecycle_config_name,
       notebook_instance_name='OctemberBizcard-NeptuneWorkbench',
       root_access='Disabled',
-      security_group_ids=[sg_use_bizcard_graph_db.security_group_name],
+      security_group_ids=[sg_use_bizcard_graph_db.security_group_id],
       subnet_id=bizcard_graph_db_subnet_group.subnet_ids[0]
     )
+
+    cdk.CfnOutput(self, 'BastionHostId', value=bastion_host.instance_id, export_name='BastionHostId')
+    cdk.CfnOutput(self, 'BastionHostPublicDNSName', value=bastion_host.instance_public_dns_name, export_name='BastionHostPublicDNSName')
+    cdk.CfnOutput(self, 'ESDomainEndpoint', value=es_cfn_domain.attr_domain_endpoint, export_name='ESDomainEndpoint')
+    cdk.CfnOutput(self, 'ESDashboardsURL', value=f"{es_cfn_domain.attr_domain_endpoint}/_dashboards/", export_name='ESDashboardsURL')
+    cdk.CfnOutput(self, 'SageMakerNotebookInstance', value=neptune_workbench.notebook_instance_name, export_name='NeptuneWorkbench')
+

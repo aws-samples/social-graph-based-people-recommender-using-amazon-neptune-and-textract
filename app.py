@@ -4,10 +4,10 @@
 
 import pretty_errors
 
-from aws_cdk import core
+import aws_cdk as cdk
 from octember_bizcard.octember_bizcard_stack import OctemberBizcardStack
 
-app = core.App()
+app = cdk.App()
 OctemberBizcardStack(app, "octember-bizcard")
 
 app.synth()
