@@ -550,7 +550,7 @@ s3 destination의 prefix를 `bizcard-text/` 로 설정함
 - [자습서: Amazon S3과 함께 AWS Lambda 사용](https://docs.aws.amazon.com/ko_kr/lambda/latest/dg/with-s3-example.html)
 - [AWS Lambda 계층](https://docs.aws.amazon.com/ko_kr/lambda/latest/dg/configuration-layers.html)
 - <a name="aws-lambda-layer-python-packages"></a>Lambda Layer에 등록할 Elasticsearch Python 패키지 생성 예제
-
+  - virtualenv를 사용하는 방법
     ```shell script
     $ python3 -m venv es-lib # virtual environments을 생성함
     $ cd es-lib
@@ -561,7 +561,19 @@ s3 destination의 prefix를 `bizcard-text/` 로 설정함
     $ mv python_modules python # 사용자가 지정한 패키지 디렉터리 이름을 python으로 변경함 (python 디렉터리에 패키지를 설치할 경우 에러가 나기 때문에 다른 이름의 디렉터리에 패키지를 설치 후, 디렉터리 이름을 변경함)
     $ zip -r es-lib.zip python/ # 필요한 패키지가 설치된 디렉터리를 압축함
     $ aws s3 mb s3://my-bucket-for-lambda-layer-packages # 압축한 패키지를 업로드할 s3 bucket을 생성함
-    $ aws s3 cp es-lib.zip s3://my-bucket-for-lambda-layer-packages/python/ # 압축한 패키지를 s3에 업로드 한 후, lambda layer에 패키지를 등록할 때, s3 위치를 등록하면 됨
+    $ aws s3 cp es-lib.zip s3://my-bucket-for-lambda-layer-packages/var/ # 압축한 패키지를 s3에 업로드 한 후, lambda layer에 패키지를 등록할 때, s3 위치를 등록하면 됨
+    ```
+  - Docker를 사용하는 방법 - [How do I create a Lambda layer using a simulated Lambda environment with Docker?](https://aws.amazon.com/premiumsupport/knowledge-center/lambda-layer-simulated-docker/)
+    ```
+    $ cat <<EOF > requirements.txt
+    > elasticsearch>=7.0.0,<7.11
+    > requests==2.23.0
+    > requests-aws4auth==0.9
+    > EOF
+    $ docker run -v "$PWD":/var/task "public.ecr.aws/sam/build-python3.7" /bin/sh -c "pip install -r requirements.txt -t python/lib/python3.7/site-packages/; exit"
+    $ zip -r es-lib.zip python > /dev/null
+    $ aws s3 mb s3://my-bucket-for-lambda-layer-packages
+    $ aws s3 cp es-lib.zip s3://my-bucket-for-lambda-layer-packages/var/
     ```
 
 ##### API Gateway + S3
