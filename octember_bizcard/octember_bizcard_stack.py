@@ -34,24 +34,30 @@ class OctemberBizcardStack(Stack):
     super().__init__(scope, construct_id, **kwargs)
 
     vpc = aws_ec2.Vpc(self, "OctemberVPC",
-      max_azs=2,
-#      subnet_configuration=[{
-#          "cidrMask": 24,
-#          "name": "Public",
-#          "subnetType": aws_ec2.SubnetType.PUBLIC,
-#        },
-#        {
-#          "cidrMask": 24,
-#          "name": "Private",
-#          "subnetType": aws_ec2.SubnetType.PRIVATE_WITH_NAT
-#        },
-#        {
-#          "cidrMask": 28,
-#          "name": "Isolated",
-#          "subnetType": aws_ec2.SubnetType.PRIVATE_ISOLATED,
-#          "reserved": True
-#        }
-#      ],
+      ip_addresses=aws_ec2.IpAddresses.cidr("10.0.0.0/21"),
+      max_azs=3,
+
+      # 'subnetConfiguration' specifies the "subnet groups" to create.
+      # Every subnet group will have a subnet for each AZ, so this
+      # configuration will create `2 groups × 3 AZs = 6` subnets.
+      subnet_configuration=[
+        {
+          "cidrMask": 24,
+          "name": "Public",
+          "subnetType": aws_ec2.SubnetType.PUBLIC,
+        },
+        {
+          "cidrMask": 24,
+          "name": "Private",
+          "subnetType": aws_ec2.SubnetType.PRIVATE_WITH_EGRESS
+        },
+        {
+          "cidrMask": 28,
+          "name": "Isolated",
+          "subnetType": aws_ec2.SubnetType.PRIVATE_ISOLATED,
+          "reserved": True
+        }
+      ],
       gateway_endpoints={
         "S3": aws_ec2.GatewayVpcEndpointOptions(
           service=aws_ec2.GatewayVpcEndpointAwsService.S3
@@ -457,7 +463,7 @@ class OctemberBizcardStack(Stack):
       },
       vpc_options={
         "securityGroupIds": [sg_bizcard_es.security_group_id],
-        "subnetIds": vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids
+        "subnetIds": vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_EGRESS).subnet_ids
       }
     )
     cdk.Tags.of(es_cfn_domain).add('Name', 'octember-bizcard-es')
@@ -597,7 +603,7 @@ class OctemberBizcardStack(Stack):
 
     es_query_cache_subnet_group = aws_elasticache.CfnSubnetGroup(self, "QueryCacheSubnetGroup",
       description="subnet group for octember-bizcard-es-cache",
-      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids,
+      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_EGRESS).subnet_ids,
       cache_subnet_group_name='octember-bizcard-es-cache'
     )
 
@@ -619,7 +625,7 @@ class OctemberBizcardStack(Stack):
 
     #XXX: If you're going to launch your cluster in an Amazon VPC, you need to create a subnet group before you start creating a cluster.
     # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-elasticache-cache-cluster.html#cfn-elasticache-cachecluster-cachesubnetgroupname
-    es_query_cache.add_depends_on(es_query_cache_subnet_group)
+    es_query_cache.add_dependency(es_query_cache_subnet_group)
 
     #XXX: add more than 2 security groups
     # https://github.com/aws/aws-cdk/blob/ea10f0d141a48819ec0000cd7905feda993870a9/packages/%40aws-cdk/aws-lambda/lib/function.ts#L387
@@ -687,7 +693,7 @@ class OctemberBizcardStack(Stack):
 
     bizcard_graph_db_subnet_group = aws_neptune.CfnDBSubnetGroup(self, "NeptuneSubnetGroup",
       db_subnet_group_description="subnet group for octember-bizcard-neptune",
-      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids,
+      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_EGRESS).subnet_ids,
       db_subnet_group_name='octember-bizcard-neptune'
     )
 
@@ -700,7 +706,7 @@ class OctemberBizcardStack(Stack):
       preferred_maintenance_window="sun:18:00-sun:18:30",
       vpc_security_group_ids=[sg_bizcard_graph_db.security_group_id]
     )
-    bizcard_graph_db.add_depends_on(bizcard_graph_db_subnet_group)
+    bizcard_graph_db.add_dependency(bizcard_graph_db_subnet_group)
 
     bizcard_graph_db_instance = aws_neptune.CfnDBInstance(self, "BizcardGraphDBInstance",
       db_instance_class="db.r5.large",
@@ -711,7 +717,7 @@ class OctemberBizcardStack(Stack):
       db_instance_identifier="octember-bizcard",
       preferred_maintenance_window="sun:18:00-sun:18:30"
     )
-    bizcard_graph_db_instance.add_depends_on(bizcard_graph_db)
+    bizcard_graph_db_instance.add_dependency(bizcard_graph_db)
 
     bizcard_graph_db_replica_instance = aws_neptune.CfnDBInstance(self, "BizcardGraphDBReplicaInstance",
       db_instance_class="db.r5.large",
@@ -722,8 +728,8 @@ class OctemberBizcardStack(Stack):
       db_instance_identifier="octember-bizcard-replica",
       preferred_maintenance_window="sun:18:00-sun:18:30"
     )
-    bizcard_graph_db_replica_instance.add_depends_on(bizcard_graph_db)
-    bizcard_graph_db_replica_instance.add_depends_on(bizcard_graph_db_instance)
+    bizcard_graph_db_replica_instance.add_dependency(bizcard_graph_db)
+    bizcard_graph_db_replica_instance.add_dependency(bizcard_graph_db_instance)
 
     gremlinpython_lib_layer = _lambda.LayerVersion(self, "GremlinPythonLib",
       layer_version_name="gremlinpython-lib",
@@ -777,7 +783,7 @@ class OctemberBizcardStack(Stack):
 
     recomm_query_cache_subnet_group = aws_elasticache.CfnSubnetGroup(self, "RecommQueryCacheSubnetGroup",
       description="subnet group for octember-bizcard-neptune-cache",
-      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_NAT).subnet_ids,
+      subnet_ids=vpc.select_subnets(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_EGRESS).subnet_ids,
       cache_subnet_group_name='octember-bizcard-neptune-cache'
     )
 
@@ -797,7 +803,7 @@ class OctemberBizcardStack(Stack):
       vpc_security_group_ids=[sg_bizcard_neptune_cache.security_group_id]
     )
 
-    recomm_query_cache.add_depends_on(recomm_query_cache_subnet_group)
+    recomm_query_cache.add_dependency(recomm_query_cache_subnet_group)
 
     bizcard_recomm_lambda_fn = _lambda.Function(self, "BizcardRecommender",
       runtime=_lambda.Runtime.PYTHON_3_7,
