@@ -13,7 +13,7 @@ isodate==0.6.0
 tornado==4.5.3
 
 # pip install redis
-redis==3.3.11
+redis==4.5.3
 
 # misc
 pretty-errors==1.2.19
